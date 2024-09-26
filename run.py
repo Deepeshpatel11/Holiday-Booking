@@ -1,6 +1,6 @@
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Set up Google Sheets API connection
 SCOPE = [
@@ -62,7 +62,52 @@ def count_employees_on_leave(sheet, shift, date_col):
 
     return leave_count
 
-# Testing the functions (for demonstration purposes)
-test_date = datetime.strptime("2024-01-01", "%Y-%m-%d")
-test_date_col = find_date_column(holiday, test_date)
-print(f"Employees on leave for shift Red on 01 Jan 2024: {count_employees_on_leave(holiday, 'Red', test_date_col)}")
+def apply_leave(sheet, employee_name, start_date, end_date, shift):
+    """
+    Applies leave for an employee by checking if the leave request is valid (i.e., fewer than 2 people 
+    are already on leave) and updating the Google Sheet if approved.
+    
+    Args:
+    sheet: The Google Sheet object (worksheet).
+    employee_name: The name of the employee requesting leave.
+    start_date: The start date of the leave request (YYYY-MM-DD format).
+    end_date: The end date of the leave request (YYYY-MM-DD format).
+    shift: The shift name ('Red', 'Green', 'Blue', 'Yellow').
+
+    Returns:
+    None: The function updates the sheet if the leave is approved and prints the status of the request.
+    """
+    start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+
+    # Find the employee's row
+    try:
+        employee_cell = sheet.find(employee_name)
+        employee_row = employee_cell.row
+    except gspread.exceptions.CellNotFound:
+        print(f"Employee {employee_name} not found in the sheet.")
+        return
+
+    # Check each day in the requested range
+    current_date = start_date_obj
+    while current_date <= end_date_obj:
+        date_col = find_date_column(sheet, current_date)
+        if date_col:
+            leave_count = count_employees_on_leave(sheet, shift, date_col)
+            if leave_count >= 2:
+                print(f"Leave denied for {employee_name}: More than 2 employees already on leave on {current_date.strftime('%Y-%m-%d')}.")
+                return  # Deny leave if 2 or more people are already on leave
+        current_date += timedelta(days=1)
+
+    # Approve leave and update the sheet
+    current_date = start_date_obj
+    while current_date <= end_date_obj:
+        date_col = find_date_column(sheet, current_date)
+        if date_col:
+            sheet.update_cell(employee_row, date_col, "Leave")
+        current_date += timedelta(days=1)
+
+    print(f"Leave approved for {employee_name} from {start_date} to {end_date}.")
+
+# Testing the function (for demonstration purposes)
+apply_leave(holiday, "Olivia Smith", "2024-01-01", "2024-01-03", "Red")
