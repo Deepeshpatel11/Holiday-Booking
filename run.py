@@ -24,59 +24,31 @@ BASE_DATE_BLUE_YELLOW = datetime.strptime("2023-01-31", "%Y-%m-%d")  # Day 1 for
 def find_date_column(sheet, date):
     """
     Finds the column number for a given date in the Google Sheet.
-    
-    Args:
-    sheet: The Google Sheet object (worksheet).
-    date: The date object for which the column needs to be found.
-
-    Returns:
-    int: The column number where the date is located in the Google Sheet, or None if not found.
     """
     date_str = date.strftime("%d %b")  # Match the format used in your sheet (e.g., '01 Jan')
     try:
         date_cell = sheet.find(date_str)
         return date_cell.col
     except:
-        print(f"Date {date_str} not found in the sheet.")
         return None
 
-def count_employees_on_leave(sheet, shift, date_col):
+def cache_date_columns(sheet, start_date, end_date):
     """
-    Counts how many employees are already marked as 'Leave' for a given shift on a specific day.
-    
-    Args:
-    sheet: The Google Sheet object (worksheet).
-    shift: The shift name ('Red', 'Green', 'Blue', 'Yellow').
-    date_col: The column number corresponding to the requested date.
-
-    Returns:
-    int: The number of employees on leave for the given shift and date.
+    Caches date columns for all dates in the given range to minimize API calls.
     """
-    leave_count = 0
-
-    # Read all the shift column and the date column in one API call to minimize read requests
-    shift_data = sheet.col_values(2)  # Column B contains the shift
-    leave_status_data = sheet.col_values(date_col)  # The date column that corresponds to the leave status
-
-    # Loop through all the rows to count how many employees are marked "Leave"
-    for i in range(1, len(shift_data)):  # Start from index 1 to skip the header
-        if shift_data[i] == shift and leave_status_data[i] == "Leave":
-            leave_count += 1
-
-    return leave_count
+    date_columns = {}
+    current_date = start_date
+    while current_date <= end_date:
+        date_col = find_date_column(sheet, current_date)
+        if date_col:
+            date_columns[current_date] = date_col
+        current_date += timedelta(days=1)
+    return date_columns
 
 def is_employee_due_to_work(employee_shift, date):
     """
     Checks whether an employee is due to work on a given date based on the shift cycle.
-    
-    Args:
-    employee_shift: The employee's shift ('Red', 'Green', 'Blue', 'Yellow').
-    date: The requested date to check.
-
-    Returns:
-    bool: True if the employee is due to work, False if they are off.
     """
-    # Calculate how many days have passed since the base date for each shift
     if employee_shift in ["Red", "Green"]:
         days_since_base = (date - BASE_DATE_GREEN_RED).days
     elif employee_shift in ["Blue", "Yellow"]:
@@ -84,7 +56,7 @@ def is_employee_due_to_work(employee_shift, date):
     else:
         return False  # Invalid shift
 
-    shift_cycle_day = days_since_base % 8  # Get the day in the current 8-day shift cycle
+    shift_cycle_day = days_since_base % 8  # 8-day shift cycle
 
     # Red/Green shifts work on days 0-3, Blue/Yellow shifts work on days 4-7
     if employee_shift in ["Red", "Green"]:
@@ -95,185 +67,72 @@ def is_employee_due_to_work(employee_shift, date):
 
 def apply_leave(sheet, employee_name, start_date, end_date, shift):
     """
-    Applies leave for an employee by checking if the leave request is valid (i.e., fewer than 2 people 
-    are already on leave) and updating the Google Sheet if approved.
-    
-    Args:
-    sheet: The Google Sheet object (worksheet).
-    employee_name: The name of the employee requesting leave.
-    start_date: The start date of the leave request (YYYY-MM-DD format).
-    end_date: The end date of the leave request (YYYY-MM-DD format).
-    shift: The shift name ('Red', 'Green', 'Blue', 'Yellow').
-
-    Returns:
-    None: The function updates the sheet if the leave is approved and prints the status of the request.
+    Optimized leave application logic by caching date columns and minimizing API calls.
     """
     start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
     end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
 
-    # Find the employee's row
+    # Fetch employee data once
+    employee_names = sheet.col_values(1)  # Employee names in column 1
+    shifts = sheet.col_values(2)  # Shifts in column 2
+    
+    # Find the employee row
     try:
-        employee_cell = sheet.find(employee_name)
-        employee_row = employee_cell.row
-    except gspread.exceptions.CellNotFound:
-        print(f"Employee {employee_name} not found in the sheet.")
+        employee_row = employee_names.index(employee_name) + 1
+    except ValueError:
+        print(f"Employee {employee_name} not found.")
         return
 
-    workdays_count = 0  # To keep track of how many workdays are counted
+    # Cache date columns to minimize API calls
+    date_columns = cache_date_columns(sheet, start_date_obj, end_date_obj)
 
-    # Check each day in the requested range
+    workdays_count = 0
+
+    # Process each day in the requested range
     current_date = start_date_obj
     while current_date <= end_date_obj:
-        # Check if the employee is due to work on this date
         if is_employee_due_to_work(shift, current_date):
             workdays_count += 1
-
-            # If the employee has already requested 8 workdays, stop the process
             if workdays_count > 8:
                 print(f"Leave denied for {employee_name}: Exceeds 8 workdays.")
                 return
 
-            date_col = find_date_column(sheet, current_date)
+            # Get the date column and leave status in batches
+            date_col = date_columns.get(current_date)
             if date_col:
-                leave_count = count_employees_on_leave(sheet, shift, date_col)
-                if leave_count >= 2:
-                    print(f"Leave denied for {employee_name}: More than 2 employees already on leave on {current_date.strftime('%Y-%m-%d')}.")
-                    return  # Deny leave if 2 or more people are already on leave
-
-        current_date += timedelta(days=1)
-
-    # Approve leave and update the sheet
-    current_date = start_date_obj
-    while current_date <= end_date_obj:
-        # Only mark leave for workdays
-        if is_employee_due_to_work(shift, current_date):
-            date_col = find_date_column(sheet, current_date)
-            if date_col:
-                sheet.update_cell(employee_row, date_col, "Leave")
-        current_date += timedelta(days=1)
-
-    print(f"Leave approved for {employee_name} covering {workdays_count} workdays.")
-
-def cancel_leave(sheet, employee_name, start_date, end_date, shift):
-    """
-    Cancels leave for an employee by checking if leave has been booked for the given range, 
-    and removing the 'Leave' status from the Google Sheet if found.
-    
-    Args:
-    sheet: The Google Sheet object (worksheet).
-    employee_name: The name of the employee canceling leave.
-    start_date: The start date of the leave to cancel (YYYY-MM-DD format).
-    end_date: The end date of the leave to cancel (YYYY-MM-DD format).
-    shift: The shift name ('Red', 'Green', 'Blue', 'Yellow').
-
-    Returns:
-    None: The function updates the sheet by removing the 'Leave' status if found.
-    """
-    start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
-    end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
-
-    # Find the employee's row
-    try:
-        employee_cell = sheet.find(employee_name)
-        employee_row = employee_cell.row
-    except gspread.exceptions.CellNotFound:
-        print(f"Employee {employee_name} not found in the sheet.")
-        return
-
-    current_date = start_date_obj
-    while current_date <= end_date_obj:
-        # Check if the employee is due to work on this date
-        if is_employee_due_to_work(shift, current_date):
-            date_col = find_date_column(sheet, current_date)
-            if date_col:
-                # Check if the employee had leave booked for this date
-                leave_status = sheet.cell(employee_row, date_col).value
-                if leave_status == "Leave":
-                    sheet.update_cell(employee_row, date_col, "")  # Remove the 'Leave' status
-                    print(f"Leave canceled for {employee_name} on {current_date.strftime('%Y-%m-%d')}.")
+                leave_statuses = sheet.col_values(date_col)
+                if leave_statuses[employee_row - 1] == "Leave":
+                    print(f"Leave already booked on {current_date.strftime('%Y-%m-%d')}")
                 else:
-                    print(f"No leave booked for {employee_name} on {current_date.strftime('%Y-%m-%d')}.")
+                    sheet.update_cell(employee_row, date_col, "Leave")
+                    print(f"Leave approved for {employee_name} on {current_date.strftime('%Y-%m-%d')}")
 
         current_date += timedelta(days=1)
 
 def request_leave():
     """
-    CLI function to request leave by taking inputs from the user for the employee name, start date, end date, 
-    and shift, and then calls the apply_leave function to process the request.
-    
-    Args:
-    None: User inputs are taken interactively.
-
-    Returns:
-    None: The function calls apply_leave to handle the request and provides output to the user.
+    CLI function to request leave by taking inputs from the user and applying leave.
     """
-    employee_names = holiday.col_values(1)  # Assuming employee names are in the first column
+    employee_name = input("Enter employee name (e.g., 'John Doe'): ")
+    start_date = input("Enter start date of leave (YYYY-MM-DD), e.g., '2024-01-01': ")
+    end_date = input("Enter end date of leave (YYYY-MM-DD), e.g., '2024-01-08': ")
+    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': ")
 
-    while True:
-        employee_name = input("Enter employee name (e.g., 'John Doe'): ")
-
-        if employee_name not in employee_names:
-            print("Employee name not found. Please try again.")
-            continue
-
-        start_date = input("Enter start date of leave (YYYY-MM-DD), e.g., '2024-01-01': ")
-        end_date = input("Enter end date of leave (YYYY-MM-DD), e.g., '2024-01-08': ")
-        shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': ")
-
-        apply_leave(holiday, employee_name, start_date, end_date, shift)
-        break
-
-def request_leave_cancellation():
-    """
-    CLI function to cancel pre-booked leave by taking inputs from the user for the employee name, 
-    start date, end date, and shift, and then calls the cancel_leave function to process the request.
-    
-    Args:
-    None: User inputs are taken interactively.
-
-    Returns:
-    None: The function calls cancel_leave to handle the cancellation and provides output to the user.
-    """
-    employee_names = holiday.col_values(1)  # Assuming employee names are in the first column
-
-    while True:
-        employee_name = input("Enter employee name (e.g., 'John Doe'): ")
-
-        if employee_name not in employee_names:
-            print("Employee name not found. Please try again.")
-            continue
-
-        start_date = input("Enter start date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-01': ")
-        end_date = input("Enter end date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-08': ")
-        shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': ")
-
-        cancel_leave(holiday, employee_name, start_date, end_date, shift)
-        break
+    apply_leave(holiday, employee_name, start_date, end_date, shift)
 
 def main():
     """
-    Main function to run the command-line interface (CLI) for the leave request system. 
-    It displays options to request leave, cancel leave, or exit the program.
-    
-    Args:
-    None
-
-    Returns:
-    None: This function runs the CLI loop until the user chooses to exit.
+    Main function to run the CLI for the leave system.
     """
     while True:
         print("\nOptions:")
         print("1. Request leave")
-        print("2. Cancel leave")
-        print("3. Exit")
+        print("2. Exit")
 
         choice = input("Enter your choice: ")
-
         if choice == '1':
             request_leave()
         elif choice == '2':
-            request_leave_cancellation()
-        elif choice == '3':
             print("Exiting system.")
             break
         else:
