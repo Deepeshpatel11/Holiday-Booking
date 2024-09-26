@@ -109,6 +109,44 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
 
         current_date += timedelta(days=1)
 
+def cancel_leave(sheet, employee_name, start_date, end_date, shift):
+    """
+    Cancels leave for an employee by checking if leave has been booked for the given range, 
+    and removing the 'Leave' status from the Google Sheet if found.
+    """
+    start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+
+    # Fetch employee data once
+    employee_names = sheet.col_values(1)  # Employee names in column 1
+    
+    # Find the employee row
+    try:
+        employee_row = employee_names.index(employee_name) + 1
+    except ValueError:
+        print(f"Employee {employee_name} not found.")
+        return
+
+    # Cache date columns to minimize API calls
+    date_columns = cache_date_columns(sheet, start_date_obj, end_date_obj)
+
+    # Process each day in the requested range
+    current_date = start_date_obj
+    while current_date <= end_date_obj:
+        if is_employee_due_to_work(shift, current_date):
+            # Get the date column
+            date_col = date_columns.get(current_date)
+            if date_col:
+                leave_statuses = sheet.col_values(date_col)
+                # Check if leave was booked
+                if leave_statuses[employee_row - 1] == "Leave":
+                    sheet.update_cell(employee_row, date_col, "")  # Remove the 'Leave' status
+                    print(f"Leave canceled for {employee_name} on {current_date.strftime('%Y-%m-%d')}.")
+                else:
+                    print(f"No leave booked for {employee_name} on {current_date.strftime('%Y-%m-%d')}.")
+
+        current_date += timedelta(days=1)
+
 def request_leave():
     """
     CLI function to request leave by taking inputs from the user and applying leave.
@@ -120,6 +158,17 @@ def request_leave():
 
     apply_leave(holiday, employee_name, start_date, end_date, shift)
 
+def request_leave_cancellation():
+    """
+    CLI function to cancel pre-booked leave by taking inputs from the user.
+    """
+    employee_name = input("Enter employee name (e.g., 'John Doe'): ")
+    start_date = input("Enter start date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-01': ")
+    end_date = input("Enter end date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-08': ")
+    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': ")
+
+    cancel_leave(holiday, employee_name, start_date, end_date, shift)
+
 def main():
     """
     Main function to run the CLI for the leave system.
@@ -127,12 +176,15 @@ def main():
     while True:
         print("\nOptions:")
         print("1. Request leave")
-        print("2. Exit")
+        print("2. Cancel leave")
+        print("3. Exit")
 
         choice = input("Enter your choice: ")
         if choice == '1':
             request_leave()
         elif choice == '2':
+            request_leave_cancellation()
+        elif choice == '3':
             print("Exiting system.")
             break
         else:
