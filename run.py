@@ -14,6 +14,4 @@ SHEET = GSPREAD_CLIENT.open("holiday_book")
 
 holiday = SHEET.worksheet("holiday")
 
-leave = holiday.get_all_values()
-
-print(leave)
+print("Google Sheets connection established and 'Holiday Book' worksheet accessed successfully.")
