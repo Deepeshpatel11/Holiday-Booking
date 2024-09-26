@@ -109,5 +109,61 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
 
     print(f"Leave approved for {employee_name} from {start_date} to {end_date}.")
 
-# Testing the function (for demonstration purposes)
-apply_leave(holiday, "Olivia Smith", "2024-01-01", "2024-01-03", "Red")
+def request_leave():
+    """
+    CLI function to request leave by taking inputs from the user for the employee name, start date, end date, 
+    and shift, and then calls the apply_leave function to process the request.
+    
+    Args:
+    None: User inputs are taken interactively.
+
+    Returns:
+    None: The function calls apply_leave to handle the request and provides output to the user.
+    """
+    # Get all employee names from the Google Sheet to verify if the entered name exists
+    employee_names = holiday.col_values(1)  # Assuming employee names are in the first column
+
+    while True:
+        employee_name = input("Enter employee name: ")
+
+        # Check if the entered employee name exists in the holiday book
+        if employee_name not in employee_names:
+            print("Employee name not found. Please try again.")
+            continue
+
+        start_date = input("Enter start date of leave (YYYY-MM-DD): ")
+        end_date = input("Enter end date of leave (YYYY-MM-DD): ")
+        shift = input("Enter employee's shift (Green/Red/Blue/Yellow): ")
+
+        # Apply the leave
+        apply_leave(holiday, employee_name, start_date, end_date, shift)
+        break
+
+def main():
+    """
+    Main function to run the command-line interface (CLI) for the leave request system. 
+    It displays options to request leave or exit the program.
+    
+    Args:
+    None
+
+    Returns:
+    None: This function runs the CLI loop until the user chooses to exit.
+    """
+    while True:
+        print("\nOptions:")
+        print("1. Request leave")
+        print("2. Exit")
+
+        choice = input("Enter your choice: ")
+
+        if choice == '1':
+            request_leave()
+        elif choice == '2':
+            print("Exiting system.")
+            break
+        else:
+            print("Invalid choice, try again.")
+
+if __name__ == "__main__":
+    main()
