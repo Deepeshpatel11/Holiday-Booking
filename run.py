@@ -17,8 +17,9 @@ SHEET = GSPREAD_CLIENT.open("holiday_book")
 # Get the "holiday" worksheet
 holiday = SHEET.worksheet("holiday")
 
-# Define base date for shift cycles (example: 1st January 2024)
-BASE_DATE = datetime.strptime("2024-01-01", "%Y-%m-%d")
+# Define base dates for the start of the shift cycles
+BASE_DATE_GREEN_RED = datetime.strptime("2024-01-04", "%Y-%m-%d")  # Day 1 for Green/Red shifts
+BASE_DATE_BLUE_YELLOW = datetime.strptime("2023-01-31", "%Y-%m-%d")  # Day 1 for Blue/Yellow shifts
 
 def find_date_column(sheet, date):
     """
@@ -76,8 +77,14 @@ def is_employee_due_to_work(employee_shift, date):
     Returns:
     bool: True if the employee is due to work, False if they are off.
     """
-    # Calculate how many days have passed since the base date
-    days_since_base = (date - BASE_DATE).days
+    # Calculate how many days have passed since the base date for each shift
+    if employee_shift in ["Red", "Green"]:
+        days_since_base = (date - BASE_DATE_GREEN_RED).days
+    elif employee_shift in ["Blue", "Yellow"]:
+        days_since_base = (date - BASE_DATE_BLUE_YELLOW).days
+    else:
+        return False  # Invalid shift
+
     shift_cycle_day = days_since_base % 8  # Get the day in the current 8-day shift cycle
 
     # Red/Green shifts work on days 0-3, Blue/Yellow shifts work on days 4-7
