@@ -12,3 +12,8 @@ SCOPED_CREDS = CREDS.with_scopes(SCOPE)
 GSPREAD_CLIENT = gspread.authorize(SCOPED_CREDS)
 SHEET = GSPREAD_CLIENT.open("holiday_book")
 
+holiday = SHEET.worksheet("holiday")
+
+leave = holiday.get_all_values()
+
+print(leave)
