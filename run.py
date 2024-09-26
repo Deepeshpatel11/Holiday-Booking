@@ -17,6 +17,9 @@ SHEET = GSPREAD_CLIENT.open("holiday_book")
 # Get the "holiday" worksheet
 holiday = SHEET.worksheet("holiday")
 
+# Define base date for shift cycles (example: 1st January 2024)
+BASE_DATE = datetime.strptime("2024-01-01", "%Y-%m-%d")
+
 def find_date_column(sheet, date):
     """
     Finds the column number for a given date in the Google Sheet.
@@ -62,6 +65,28 @@ def count_employees_on_leave(sheet, shift, date_col):
 
     return leave_count
 
+def is_employee_due_to_work(employee_shift, date):
+    """
+    Checks whether an employee is due to work on a given date based on the shift cycle.
+    
+    Args:
+    employee_shift: The employee's shift ('Red', 'Green', 'Blue', 'Yellow').
+    date: The requested date to check.
+
+    Returns:
+    bool: True if the employee is due to work, False if they are off.
+    """
+    # Calculate how many days have passed since the base date
+    days_since_base = (date - BASE_DATE).days
+    shift_cycle_day = days_since_base % 8  # Get the day in the current 8-day shift cycle
+
+    # Red/Green shifts work on days 0-3, Blue/Yellow shifts work on days 4-7
+    if employee_shift in ["Red", "Green"]:
+        return shift_cycle_day < 4  # Work on days 0-3
+    elif employee_shift in ["Blue", "Yellow"]:
+        return shift_cycle_day >= 4  # Work on days 4-7
+    return False
+
 def apply_leave(sheet, employee_name, start_date, end_date, shift):
     """
     Applies leave for an employee by checking if the leave request is valid (i.e., fewer than 2 people 
@@ -91,6 +116,11 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
     # Check each day in the requested range
     current_date = start_date_obj
     while current_date <= end_date_obj:
+        # Check if the employee is due to work on this date
+        if not is_employee_due_to_work(shift, current_date):
+            print(f"{employee_name} is not due to work on {current_date.strftime('%Y-%m-%d')}. No leave needed.")
+            return  # Exit if the employee is not working on this date
+
         date_col = find_date_column(sheet, current_date)
         if date_col:
             leave_count = count_employees_on_leave(sheet, shift, date_col)
