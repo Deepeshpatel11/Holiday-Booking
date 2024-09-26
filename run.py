@@ -113,31 +113,40 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
         print(f"Employee {employee_name} not found in the sheet.")
         return
 
+    workdays_count = 0  # To keep track of how many workdays are counted
+
     # Check each day in the requested range
     current_date = start_date_obj
     while current_date <= end_date_obj:
         # Check if the employee is due to work on this date
-        if not is_employee_due_to_work(shift, current_date):
-            print(f"{employee_name} is not due to work on {current_date.strftime('%Y-%m-%d')}. No leave needed.")
-            return  # Exit if the employee is not working on this date
+        if is_employee_due_to_work(shift, current_date):
+            workdays_count += 1
 
-        date_col = find_date_column(sheet, current_date)
-        if date_col:
-            leave_count = count_employees_on_leave(sheet, shift, date_col)
-            if leave_count >= 2:
-                print(f"Leave denied for {employee_name}: More than 2 employees already on leave on {current_date.strftime('%Y-%m-%d')}.")
-                return  # Deny leave if 2 or more people are already on leave
+            # If the employee has already requested 8 workdays, stop the process
+            if workdays_count > 8:
+                print(f"Leave denied for {employee_name}: Exceeds 8 workdays.")
+                return
+
+            date_col = find_date_column(sheet, current_date)
+            if date_col:
+                leave_count = count_employees_on_leave(sheet, shift, date_col)
+                if leave_count >= 2:
+                    print(f"Leave denied for {employee_name}: More than 2 employees already on leave on {current_date.strftime('%Y-%m-%d')}.")
+                    return  # Deny leave if 2 or more people are already on leave
+
         current_date += timedelta(days=1)
 
     # Approve leave and update the sheet
     current_date = start_date_obj
     while current_date <= end_date_obj:
-        date_col = find_date_column(sheet, current_date)
-        if date_col:
-            sheet.update_cell(employee_row, date_col, "Leave")
+        # Only mark leave for workdays
+        if is_employee_due_to_work(shift, current_date):
+            date_col = find_date_column(sheet, current_date)
+            if date_col:
+                sheet.update_cell(employee_row, date_col, "Leave")
         current_date += timedelta(days=1)
 
-    print(f"Leave approved for {employee_name} from {start_date} to {end_date}.")
+    print(f"Leave approved for {employee_name} covering {workdays_count} workdays.")
 
 def request_leave():
     """
