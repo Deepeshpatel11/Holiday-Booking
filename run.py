@@ -170,16 +170,19 @@ def request_leave():
     employee_names = holiday.col_values(1)  # Assuming employee names are in the first column
 
     while True:
-        employee_name = input("Enter employee name: ")
+        employee_name = input("Enter employee name (e.g., 'John Doe'): ")
 
         # Check if the entered employee name exists in the holiday book
         if employee_name not in employee_names:
             print("Employee name not found. Please try again.")
             continue
 
-        start_date = input("Enter start date of leave (YYYY-MM-DD): ")
-        end_date = input("Enter end date of leave (YYYY-MM-DD): ")
-        shift = input("Enter employee's shift (Green/Red/Blue/Yellow): ")
+        # Show an example format for the start and end dates
+        start_date = input("Enter start date of leave (YYYY-MM-DD), e.g., '2024-01-01': ")
+        end_date = input("Enter end date of leave (YYYY-MM-DD), e.g., '2024-01-08': ")
+
+        # Show an example format for the shift name
+        shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': ")
 
         # Apply the leave
         apply_leave(holiday, employee_name, start_date, end_date, shift)
