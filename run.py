@@ -65,23 +65,57 @@ def is_employee_due_to_work(employee_shift, date):
         return shift_cycle_day >= 4  # Work on days 4-7
     return False
 
+def format_input(input_value):
+    """
+    Formats and standardizes user inputs for names and shifts.
+    """
+    return input_value.strip().title()  # Converts strings to Title Case and removes extra spaces
+
+def validate_shift(sheet, employee_name, expected_shift):
+    """
+    Validates if the shift entered in the CLI matches the employee's actual shift in the Google Sheet.
+    """
+    employee_names = sheet.col_values(1)  # Employee names in column 1
+    shifts = sheet.col_values(2)  # Shifts in column 2
+
+    try:
+        employee_row = employee_names.index(employee_name)  # Find the row for the employee
+        actual_shift = shifts[employee_row]  # Get the actual shift from the sheet
+        return actual_shift == expected_shift
+    except ValueError:
+        return False  # Employee not found
+
 def apply_leave(sheet, employee_name, start_date, end_date, shift):
     """
-    Optimized leave application logic by caching date columns and minimizing API calls.
+    Applies leave for an employee and validates the shift before processing.
     """
+    employee_name = format_input(employee_name)  # Standardize employee name input
+    shift = format_input(shift)  # Standardize shift input
+
+    if not validate_shift(sheet, employee_name, shift):
+        print(f"Leave request failed: {employee_name} does not belong to the {shift} shift.")
+        return
+
     start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
     end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
 
     # Fetch employee data once
     employee_names = sheet.col_values(1)  # Employee names in column 1
-    shifts = sheet.col_values(2)  # Shifts in column 2
-    
+    total_leave_column = sheet.col_values(3)  # Total leave in column 3
+    leave_taken_column = sheet.col_values(4)  # Leave taken in column 4 (auto-calculated)
+
     # Find the employee row
     try:
         employee_row = employee_names.index(employee_name) + 1
     except ValueError:
-        print(f"Employee {employee_name} not found.")
+        print(f"Employee {employee_name} not found. Please ensure the name is correctly formatted.")
         return
+
+    # Display leave statistics before applying leave
+    total_leave = total_leave_column[employee_row - 1]  # Total leave allocated
+    leave_taken = leave_taken_column[employee_row - 1]  # Current leave taken
+    print(f"Employee: {employee_name}, Shift: {shift}")
+    print(f"Total Leave: {total_leave}, Leave Taken: {leave_taken}")
 
     # Cache date columns to minimize API calls
     date_columns = cache_date_columns(sheet, start_date_obj, end_date_obj)
@@ -109,23 +143,40 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
 
         current_date += timedelta(days=1)
 
+    # Display updated leave taken count (which is automatically updated by the formula)
+    leave_taken_column = sheet.col_values(4)  # Refresh the leave taken data
+    updated_leave_taken = leave_taken_column[employee_row - 1]
+    print(f"Leave approved for {employee_name}. Updated Leave Taken: {updated_leave_taken} days.")
+
 def cancel_leave(sheet, employee_name, start_date, end_date, shift):
     """
-    Cancels leave for an employee by checking if leave has been booked for the given range, 
-    and removing the 'Leave' status from the Google Sheet if found.
+    Cancels leave for an employee and validates the shift before processing.
     """
+    employee_name = format_input(employee_name)  # Standardize employee name input
+    shift = format_input(shift)  # Standardize shift input
+
+    if not validate_shift(sheet, employee_name, shift):
+        print(f"Leave cancellation failed: {employee_name} does not belong to the {shift} shift.")
+        return
+
     start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
     end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
 
     # Fetch employee data once
     employee_names = sheet.col_values(1)  # Employee names in column 1
-    
+    leave_taken_column = sheet.col_values(4)  # Leave taken in column 4 (auto-calculated)
+
     # Find the employee row
     try:
         employee_row = employee_names.index(employee_name) + 1
     except ValueError:
         print(f"Employee {employee_name} not found.")
         return
+
+    # Display leave statistics before cancellation
+    leave_taken = leave_taken_column[employee_row - 1]
+    print(f"Employee: {employee_name}, Shift: {shift}")
+    print(f"Leave Taken Before Cancellation: {leave_taken} days")
 
     # Cache date columns to minimize API calls
     date_columns = cache_date_columns(sheet, start_date_obj, end_date_obj)
@@ -134,7 +185,6 @@ def cancel_leave(sheet, employee_name, start_date, end_date, shift):
     current_date = start_date_obj
     while current_date <= end_date_obj:
         if is_employee_due_to_work(shift, current_date):
-            # Get the date column
             date_col = date_columns.get(current_date)
             if date_col:
                 leave_statuses = sheet.col_values(date_col)
@@ -142,19 +192,22 @@ def cancel_leave(sheet, employee_name, start_date, end_date, shift):
                 if leave_statuses[employee_row - 1] == "Leave":
                     sheet.update_cell(employee_row, date_col, "")  # Remove the 'Leave' status
                     print(f"Leave canceled for {employee_name} on {current_date.strftime('%Y-%m-%d')}.")
-                else:
-                    print(f"No leave booked for {employee_name} on {current_date.strftime('%Y-%m-%d')}.")
 
         current_date += timedelta(days=1)
+
+    # Display updated leave taken count (which is automatically updated by the formula)
+    leave_taken_column = sheet.col_values(4)  # Refresh the leave taken data
+    updated_leave_taken = leave_taken_column[employee_row - 1]
+    print(f"Leave cancelled for {employee_name}. Updated Leave Taken: {updated_leave_taken} days.")
 
 def request_leave():
     """
     CLI function to request leave by taking inputs from the user and applying leave.
     """
-    employee_name = input("Enter employee name (e.g., 'John Doe'): ")
-    start_date = input("Enter start date of leave (YYYY-MM-DD), e.g., '2024-01-01': ")
-    end_date = input("Enter end date of leave (YYYY-MM-DD), e.g., '2024-01-08': ")
-    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': ")
+    employee_name = input("Enter employee name (e.g. 'John Doe'): ")
+    start_date = input("Enter start date of leave (YYYY-MM-DD), e.g. '2024-01-01': ")
+    end_date = input("Enter end date of leave (YYYY-MM-DD), e.g. '2024-01-08': ")
+    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g. 'Green': ")
 
     apply_leave(holiday, employee_name, start_date, end_date, shift)
 
@@ -162,10 +215,10 @@ def request_leave_cancellation():
     """
     CLI function to cancel pre-booked leave by taking inputs from the user.
     """
-    employee_name = input("Enter employee name (e.g., 'John Doe'): ")
-    start_date = input("Enter start date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-01': ")
-    end_date = input("Enter end date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-08': ")
-    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': ")
+    employee_name = input("Enter employee name (e.g. 'John Doe'): ")
+    start_date = input("Enter start date of leave to cancel (YYYY-MM-DD), e.g. '2024-01-01'): ")
+    end_date = input("Enter end date of leave to cancel (YYYY-MM-DD), e.g. '2024-01-08'): ")
+    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g. 'Green': ")
 
     cancel_leave(holiday, employee_name, start_date, end_date, shift)
 
