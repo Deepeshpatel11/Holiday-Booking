@@ -85,6 +85,25 @@ def validate_shift(sheet, employee_name, expected_shift):
     except ValueError:
         return False  # Employee not found
 
+def validate_date(date_str):
+    """
+    Validates if the given date string is in the format 'YYYY-MM-DD' and within the year 2024.
+    Returns a datetime object if valid, otherwise returns None.
+    """
+    try:
+        # Attempt to parse the date string
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        
+        # Check if the date is within the year 2024
+        if date_obj.year != 2024:
+            print(f"Error: The date must be in the year 2024. You entered {date_obj.year}.")
+            return None
+        return date_obj
+    except ValueError:
+        # Catch invalid date formats and non-existing dates
+        print("Error: Invalid date format or non-existent date. Please enter the date in 'YYYY-MM-DD' format.")
+        return None
+
 def apply_leave(sheet, employee_name, start_date, end_date, shift):
     """
     Applies leave for an employee and validates the shift before processing.
@@ -148,66 +167,28 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
     updated_leave_taken = leave_taken_column[employee_row - 1]
     print(f"Leave approved for {employee_name}. Updated Leave Taken: {updated_leave_taken} days.")
 
-def cancel_leave(sheet, employee_name, start_date, end_date, shift):
-    """
-    Cancels leave for an employee and validates the shift before processing.
-    """
-    employee_name = format_input(employee_name)  # Standardize employee name input
-    shift = format_input(shift)  # Standardize shift input
-
-    if not validate_shift(sheet, employee_name, shift):
-        print(f"Leave cancellation failed: {employee_name} does not belong to the {shift} shift.")
-        return
-
-    start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
-    end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
-
-    # Fetch employee data once
-    employee_names = sheet.col_values(1)  # Employee names in column 1
-    leave_taken_column = sheet.col_values(4)  # Leave taken in column 4 (auto-calculated)
-
-    # Find the employee row
-    try:
-        employee_row = employee_names.index(employee_name) + 1
-    except ValueError:
-        print(f"Employee {employee_name} not found.")
-        return
-
-    # Display leave statistics before cancellation
-    leave_taken = leave_taken_column[employee_row - 1]
-    print(f"Employee: {employee_name}, Shift: {shift}")
-    print(f"Leave Taken Before Cancellation: {leave_taken} days")
-
-    # Cache date columns to minimize API calls
-    date_columns = cache_date_columns(sheet, start_date_obj, end_date_obj)
-
-    # Process each day in the requested range
-    current_date = start_date_obj
-    while current_date <= end_date_obj:
-        if is_employee_due_to_work(shift, current_date):
-            date_col = date_columns.get(current_date)
-            if date_col:
-                leave_statuses = sheet.col_values(date_col)
-                # Check if leave was booked
-                if leave_statuses[employee_row - 1] == "Leave":
-                    sheet.update_cell(employee_row, date_col, "")  # Remove the 'Leave' status
-                    print(f"Leave canceled for {employee_name} on {current_date.strftime('%Y-%m-%d')}.")
-
-        current_date += timedelta(days=1)
-
-    # Display updated leave taken count (which is automatically updated by the formula)
-    leave_taken_column = sheet.col_values(4)  # Refresh the leave taken data
-    updated_leave_taken = leave_taken_column[employee_row - 1]
-    print(f"Leave cancelled for {employee_name}. Updated Leave Taken: {updated_leave_taken} days.")
-
 def request_leave():
     """
     CLI function to request leave by taking inputs from the user and applying leave.
     """
-    employee_name = input("Enter employee name (e.g. 'John Doe'): ")
-    start_date = input("Enter start date of leave (YYYY-MM-DD), e.g. '2024-01-01': ")
-    end_date = input("Enter end date of leave (YYYY-MM-DD), e.g. '2024-01-08': ")
-    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g. 'Green': ")
+    employee_name = input("Enter employee name (e.g., 'John Doe'): ")
+    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': ")
+
+    # Get a valid start date
+    while True:
+        start_date = input("Enter start date of leave (YYYY-MM-DD), e.g., '2024-01-01': ")
+        start_date_obj = validate_date(start_date)
+        if start_date_obj:
+            break
+
+    # Get a valid end date
+    while True:
+        end_date = input("Enter end date of leave (YYYY-MM-DD), e.g., '2024-01-08': ")
+        end_date_obj = validate_date(end_date)
+        if end_date_obj and end_date_obj >= start_date_obj:
+            break
+        else:
+            print(f"Error: The end date must be on or after the start date ({start_date}).")
 
     apply_leave(holiday, employee_name, start_date, end_date, shift)
 
@@ -215,10 +196,24 @@ def request_leave_cancellation():
     """
     CLI function to cancel pre-booked leave by taking inputs from the user.
     """
-    employee_name = input("Enter employee name (e.g. 'John Doe'): ")
-    start_date = input("Enter start date of leave to cancel (YYYY-MM-DD), e.g. '2024-01-01'): ")
-    end_date = input("Enter end date of leave to cancel (YYYY-MM-DD), e.g. '2024-01-08'): ")
-    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g. 'Green': ")
+    employee_name = input("Enter employee name (e.g., 'John Doe'): ")
+    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': ")
+
+    # Get a valid start date for cancellation
+    while True:
+        start_date = input("Enter start date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-01': ")
+        start_date_obj = validate_date(start_date)
+        if start_date_obj:
+            break
+
+    # Get a valid end date for cancellation
+    while True:
+        end_date = input("Enter end date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-08': ")
+        end_date_obj = validate_date(end_date)
+        if end_date_obj and end_date_obj >= start_date_obj:
+            break
+        else:
+            print(f"Error: The end date must be on or after the start date ({start_date}).")
 
     cancel_leave(holiday, employee_name, start_date, end_date, shift)
 
