@@ -106,7 +106,8 @@ def validate_date(date_str):
 
 def apply_leave(sheet, employee_name, start_date, end_date, shift):
     """
-    Applies leave for an employee and validates the shift before processing.
+    Applies leave for an employee, ensuring the employee is scheduled to work on the requested dates.
+    If the employee is already marked as 'Off', notify the user and do not apply leave for those days.
     """
     employee_name = format_input(employee_name)  # Standardize employee name input
     shift = format_input(shift)  # Standardize shift input
@@ -144,19 +145,22 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
     # Process each day in the requested range
     current_date = start_date_obj
     while current_date <= end_date_obj:
-        if is_employee_due_to_work(shift, current_date):
-            workdays_count += 1
-            if workdays_count > 8:
-                print(f"Leave denied for {employee_name}: Exceeds 8 workdays.")
-                return
+        date_col = date_columns.get(current_date)
+        if date_col:
+            leave_statuses = sheet.col_values(date_col)
+            current_status = leave_statuses[employee_row - 1]
 
-            # Get the date column and leave status in batches
-            date_col = date_columns.get(current_date)
-            if date_col:
-                leave_statuses = sheet.col_values(date_col)
-                if leave_statuses[employee_row - 1] == "Leave":
-                    print(f"Leave already booked on {current_date.strftime('%Y-%m-%d')}")
-                else:
+            # Check if the employee is already marked as "Off"
+            if current_status == "Off":
+                print(f"Employee is already planned to be off work on {current_date.strftime('%Y-%m-%d')}. Leave not needed.")
+            elif current_status == "Leave":
+                print(f"Leave already booked on {current_date.strftime('%Y-%m-%d')}")
+            else:
+                if is_employee_due_to_work(shift, current_date):
+                    workdays_count += 1
+                    if workdays_count > 8:
+                        print(f"Leave denied for {employee_name}: Exceeds 8 workdays.")
+                        return
                     sheet.update_cell(employee_row, date_col, "Leave")
                     print(f"Leave approved for {employee_name} on {current_date.strftime('%Y-%m-%d')}")
 
@@ -165,7 +169,50 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
     # Display updated leave taken count (which is automatically updated by the formula)
     leave_taken_column = sheet.col_values(4)  # Refresh the leave taken data
     updated_leave_taken = leave_taken_column[employee_row - 1]
-    print(f"Leave approved for {employee_name}. Updated Leave Taken: {updated_leave_taken} days.")
+    print(f"Updated Leave Taken: {updated_leave_taken} days.")
+
+def cancel_leave(sheet, employee_name, start_date, end_date, shift):
+    """
+    Cancels leave for an employee and validates the shift before processing.
+    Ensures that leave has been booked on the requested dates.
+    """
+    employee_name = format_input(employee_name)  # Standardize employee name input
+    shift = format_input(shift)  # Standardize shift input
+
+    if not validate_shift(sheet, employee_name, shift):
+        print(f"Leave cancellation failed: {employee_name} does not belong to the {shift} shift.")
+        return
+
+    start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+
+    # Fetch employee data once
+    employee_names = sheet.col_values(1)  # Employee names in column 1
+
+    # Find the employee row
+    try:
+        employee_row = employee_names.index(employee_name) + 1
+    except ValueError:
+        print(f"Employee {employee_name} not found.")
+        return
+
+    # Cache date columns to minimize API calls
+    date_columns = cache_date_columns(sheet, start_date_obj, end_date_obj)
+
+    # Process each day in the requested range
+    current_date = start_date_obj
+    while current_date <= end_date_obj:
+        date_col = date_columns.get(current_date)
+        if date_col:
+            leave_statuses = sheet.col_values(date_col)
+            # Check if leave was booked
+            if leave_statuses[employee_row - 1] == "Leave":
+                sheet.update_cell(employee_row, date_col, "")  # Remove the 'Leave' status
+                print(f"Leave canceled for {employee_name} on {current_date.strftime('%Y-%m-%d')}.")
+            else:
+                print(f"No leave found for {employee_name} on {current_date.strftime('%Y-%m-%d')}.")
+
+        current_date += timedelta(days=1)
 
 def request_leave():
     """
