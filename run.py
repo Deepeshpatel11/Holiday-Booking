@@ -118,7 +118,7 @@ def validate_date(date_str):
 
 def apply_leave(sheet, employee_name, start_date, end_date, shift):
     """
-    Applies leave for an employee, ensuring the employee is scheduled to work on the requested dates.
+    Applies leave for an employee, ensuring no more than 2 employees are on leave on the same date.
     """
     employee_name = format_input(employee_name)
     shift = format_input(shift)
@@ -150,19 +150,22 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
     date_columns = cache_date_columns(sheet, start_date_obj, end_date_obj)
     workdays_count = 0
 
+    # Check if applying leave would exceed 2 employees on leave for any date
     current_date = start_date_obj
     while current_date <= end_date_obj:
         if is_employee_due_to_work(shift, current_date):
-            workdays_count += 1
+            date_col = date_columns.get(current_date)
+            if date_col:
+                leave_statuses = sheet.col_values(date_col)
+                employees_on_leave = leave_statuses.count("Leave")
+                if employees_on_leave >= 2:
+                    print(f"Leave request denied for {employee_name}: More than 2 employees already on leave on {current_date.strftime('%Y-%m-%d')}.")
+                    log_to_audit_trail(employee_name, "Apply Leave", start_date, end_date, "Denied", f"Exceeds 2 employees on leave for {current_date.strftime('%Y-%m-%d')}")
+                    return
         current_date += timedelta(days=1)
 
-    if workdays_count > 8:
-        print(f"Leave request denied for {employee_name}: Exceeds 8 workdays. Please see your supervisor.")
-        log_to_audit_trail(employee_name, "Apply Leave", start_date, end_date, "Denied", "Exceeds 8 Workdays")
-        return
-
+    # If within limits, proceed with applying leave
     current_date = start_date_obj
-
     while current_date <= end_date_obj:
         date_col = date_columns.get(current_date)
         if date_col:
@@ -189,6 +192,7 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
 def cancel_leave(sheet, employee_name, start_date, end_date, shift):
     """
     Cancels leave for an employee and validates the shift before processing.
+    Ensures that leave has been booked on the requested dates and logs a single audit trail entry.
     """
     employee_name = format_input(employee_name)
     shift = format_input(shift)
@@ -232,17 +236,20 @@ def cancel_leave(sheet, employee_name, start_date, end_date, shift):
 
 
 def request_leave():
-    employee_name = input("Enter employee name (e.g., 'John Doe'):\n")
-    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green':\n")
+    """
+    CLI function to request leave by taking inputs from the user and applying leave.
+    """
+    employee_name = input("Enter employee name (e.g., 'John Doe'): ")
+    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': ")
 
     while True:
-        start_date = input("Enter start date of leave (YYYY-MM-DD), e.g., '2024-01-01':\n")
+        start_date = input("Enter start date of leave (YYYY-MM-DD), e.g., '2024-01-01': ")
         start_date_obj = validate_date(start_date)
         if start_date_obj:
             break
 
     while True:
-        end_date = input("Enter end date of leave (YYYY-MM-DD), e.g., '2024-01-08':\n")
+        end_date = input("Enter end date of leave (YYYY-MM-DD), e.g., '2024-01-08': ")
         end_date_obj = validate_date(end_date)
         if end_date_obj and end_date_obj >= start_date_obj:
             break
@@ -253,17 +260,20 @@ def request_leave():
 
 
 def request_leave_cancellation():
-    employee_name = input("Enter employee name (e.g., 'John Doe'):\n")
-    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green':\n")
+    """
+    CLI function to cancel pre-booked leave by taking inputs from the user.
+    """
+    employee_name = input("Enter employee name (e.g., 'John Doe'): ")
+    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': ")
 
     while True:
-        start_date = input("Enter start date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-01':\n")
+        start_date = input("Enter start date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-01': ")
         start_date_obj = validate_date(start_date)
         if start_date_obj:
             break
 
     while True:
-        end_date = input("Enter end date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-08':\n")
+        end_date = input("Enter end date of leave to cancel (YYYY-MM-DD), e.g., '2024-01-08': ")
         end_date_obj = validate_date(end_date)
         if end_date_obj and end_date_obj >= start_date_obj:
             break
@@ -274,13 +284,16 @@ def request_leave_cancellation():
 
 
 def main():
+    """
+    Main function to run the CLI for the leave system.
+    """
     while True:
         print("\nOptions:")
         print("1. Request leave")
         print("2. Cancel leave")
         print("3. Exit")
 
-        choice = input("Enter your choice:\n")
+        choice = input("Enter your choice: ")
         if choice == '1':
             request_leave()
         elif choice == '2':
