@@ -18,16 +18,16 @@ SHEET = GSPREAD_CLIENT.open("holiday_book")
 holiday = SHEET.worksheet("holiday")
 audit_trail = SHEET.worksheet("audit_trail")
 
-# Define base dates for the start of the shift cycles
-BASE_DATE_GREEN_RED = datetime.strptime("2024-01-04", "%Y-%m-%d")  # Day 1 for Green/Red shifts
-BASE_DATE_BLUE_YELLOW = datetime.strptime("2023-01-31", "%Y-%m-%d")  # Day 1 for Blue/Yellow shifts
+# Define base dates for the start of the shift cycles (same for alignment)
+BASE_DATE_GREEN_RED = datetime.strptime("2024-01-04", "%Y-%m-%d")
+BASE_DATE_BLUE_YELLOW = BASE_DATE_GREEN_RED  # Use same base date for consistent cycle alignment
 
 
 def log_to_audit_trail(employee_name, action, start_date, end_date, status, remarks=""):
     """
     Logs the leave request status to the 'audit_trail' worksheet in Google Sheets.
     """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # Current timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     new_row = [timestamp, employee_name, action, start_date, end_date, status, remarks]
     audit_trail.append_row(new_row)
     print(f"Logged action to audit_trail: {new_row}")
@@ -36,12 +36,15 @@ def log_to_audit_trail(employee_name, action, start_date, end_date, status, rema
 def find_date_column(sheet, date):
     """
     Finds the column number for a given date in the Google Sheet.
+    The date in the sheet is in 'DD MMM' format (e.g., '01 Jan').
     """
-    date_str = date.strftime("%d %b")  # Match the format used in your sheet (e.g., '01 Jan')
-    try:
-        date_cell = sheet.find(date_str)
+    date_str = date.strftime("%d %b")  # Format to match 'DD MMM'
+    date_cell = sheet.find(date_str)
+
+    if date_cell is not None:
         return date_cell.col
-    except gspread.exceptions.CellNotFound:
+    else:
+        print(f"[ERROR] Date {date_str} not found in the sheet.")
         return None
 
 
@@ -55,6 +58,8 @@ def cache_date_columns(sheet, start_date, end_date):
         date_col = find_date_column(sheet, current_date)
         if date_col:
             date_columns[current_date] = date_col
+        else:
+            print(f"[DEBUG] No date column found for {current_date.strftime('%Y-%m-%d')}")
         current_date += timedelta(days=1)
     return date_columns
 
@@ -68,7 +73,7 @@ def is_employee_due_to_work(employee_shift, date):
     elif employee_shift in ["Blue", "Yellow"]:
         days_since_base = (date - BASE_DATE_BLUE_YELLOW).days
     else:
-        return False  # Invalid shift
+        return False
 
     shift_cycle_day = days_since_base % 8  # 8-day shift cycle
 
@@ -83,7 +88,7 @@ def format_input(input_value):
     """
     Formats and standardizes user inputs for names and shifts.
     """
-    return input_value.strip().title()  # Converts strings to Title Case and removes extra spaces
+    return input_value.strip().title()  # Converts strings to Title Case
 
 
 def validate_shift(sheet, employee_name, expected_shift):
@@ -94,8 +99,8 @@ def validate_shift(sheet, employee_name, expected_shift):
     shifts = sheet.col_values(2)  # Shifts in column 2
 
     try:
-        employee_row = employee_names.index(employee_name)  # Find the row for the employee
-        actual_shift = shifts[employee_row]  # Get the actual shift from the sheet
+        employee_row = employee_names.index(employee_name)  # Find employee row
+        actual_shift = shifts[employee_row]  # Get the actual shift
         return actual_shift == expected_shift
     except ValueError:
         return False  # Employee not found
@@ -148,39 +153,41 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
     print(f"Total Leave: {total_leave}, Leave Taken: {leave_taken}")
 
     date_columns = cache_date_columns(sheet, start_date_obj, end_date_obj)
-    workdays_count = 0
 
-    # Check if applying leave would exceed 2 employees on leave for any date
     current_date = start_date_obj
     while current_date <= end_date_obj:
         if is_employee_due_to_work(shift, current_date):
             date_col = date_columns.get(current_date)
             if date_col:
                 leave_statuses = sheet.col_values(date_col)
+                if len(leave_statuses) < employee_row:
+                    print(f"[ERROR] Employee row index {employee_row - 1} is out of range for column {date_col}.")
+                    log_to_audit_trail(employee_name, "Apply Leave", start_date, end_date, "Denied", "Row Out of Bounds")
+                    return
+
                 employees_on_leave = leave_statuses.count("Leave")
                 if employees_on_leave >= 2:
                     print(f"Leave request denied for {employee_name}: More than 2 employees already on leave on {current_date.strftime('%Y-%m-%d')}.")
                     log_to_audit_trail(employee_name, "Apply Leave", start_date, end_date, "Denied", f"Exceeds 2 employees on leave for {current_date.strftime('%Y-%m-%d')}")
                     return
+
         current_date += timedelta(days=1)
 
-    # If within limits, proceed with applying leave
     current_date = start_date_obj
     while current_date <= end_date_obj:
         date_col = date_columns.get(current_date)
         if date_col:
             leave_statuses = sheet.col_values(date_col)
-            current_status = leave_statuses[employee_row - 1]
-
-            if current_status == "Off":
-                print(f"Employee is already planned to be off work on {current_date.strftime('%Y-%m-%d')}. Leave not needed.")
-            elif current_status == "Leave":
-                print(f"Leave already booked on {current_date.strftime('%Y-%m-%d')}")
-            else:
-                if is_employee_due_to_work(shift, current_date):
-                    sheet.update_cell(employee_row, date_col, "Leave")
-                    print(f"Leave applied for {employee_name} on {current_date.strftime('%Y-%m-%d')}")
-
+            if len(leave_statuses) >= employee_row:
+                current_status = leave_statuses[employee_row - 1]
+                if current_status == "Off":
+                    print(f"Employee is already planned to be off work on {current_date.strftime('%Y-%m-%d')}. Leave not needed.")
+                elif current_status == "Leave":
+                    print(f"Leave already booked on {current_date.strftime('%Y-%m-%d')}.")
+                else:
+                    if is_employee_due_to_work(shift, current_date):
+                        sheet.update_cell(employee_row, date_col, "Leave")
+                        print(f"Leave applied for {employee_name} on {current_date.strftime('%Y-%m-%d')}")
         current_date += timedelta(days=1)
 
     leave_taken_column = sheet.col_values(4)
@@ -192,7 +199,6 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
 def cancel_leave(sheet, employee_name, start_date, end_date, shift):
     """
     Cancels leave for an employee and validates the shift before processing.
-    Ensures that leave has been booked on the requested dates and logs a single audit trail entry.
     """
     employee_name = format_input(employee_name)
     shift = format_input(shift)
@@ -223,8 +229,8 @@ def cancel_leave(sheet, employee_name, start_date, end_date, shift):
         date_col = date_columns.get(current_date)
         if date_col:
             leave_statuses = sheet.col_values(date_col)
-            if leave_statuses[employee_row - 1] == "Leave":
-                sheet.update_cell(employee_row, date_col, "")
+            if len(leave_statuses) >= employee_row and leave_statuses[employee_row - 1] == "Leave":
+                sheet.update_cell(employee_row, date_col, "In")
                 print(f"Leave canceled for {employee_name} on {current_date.strftime('%Y-%m-%d')}.")
                 cancellation_made = True
             else:
