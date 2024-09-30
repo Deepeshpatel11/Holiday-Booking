@@ -132,14 +132,16 @@ def validate_date(date_str):
 def apply_leave(sheet, employee_name, start_date, end_date, shift):
     """
     Applies leave for an employee, ensuring no more than 2 employees are on
-    leave on the same date.
+    leave within the same exact shift (e.g., Red, Green, Blue, or Yellow).
     """
     employee_name = format_input(employee_name)
     shift = format_input(shift)
 
     if not validate_shift(sheet, employee_name, shift):
-        print(f"Leave request failed: {employee_name} does not belong to "
-              f"the {shift} shift.")
+        print(
+            f"Leave request failed: {employee_name} is not in "
+            f"{shift} shift."
+        )
         log_to_audit_trail(employee_name, "Apply Leave", start_date, end_date,
                            "Denied", "Invalid Shift")
         return
@@ -148,9 +150,7 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
     end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
 
     employee_names = sheet.col_values(1)
-    total_leave_column = sheet.col_values(3)
-    leave_taken_column = sheet.col_values(4)
-
+    shifts = sheet.col_values(2)
     try:
         employee_row = employee_names.index(employee_name) + 1
     except ValueError:
@@ -159,30 +159,34 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
                            "Denied", "Employee Not Found")
         return
 
-    total_leave = total_leave_column[employee_row - 1]
-    leave_taken = leave_taken_column[employee_row - 1]
-    print(f"Employee: {employee_name}, Shift: {shift}")
-    print(f"Total Leave: {total_leave}, Leave Taken: {leave_taken}")
-
+    # Cache the date columns for quick lookups
     date_columns = cache_date_columns(sheet, start_date_obj, end_date_obj)
     current_date = start_date_obj
 
+    # Check for existing leave conflicts within the same individual shift
     while current_date <= end_date_obj:
         if is_employee_due_to_work(shift, current_date):
             date_col = date_columns.get(current_date)
             if date_col:
                 leave_statuses = sheet.col_values(date_col)
-                employees_on_leave = leave_statuses.count("Leave")
+                same_shift_leaves = [
+                    i for i, name in enumerate(employee_names)
+                    if leave_statuses[i] == "Leave" and shifts[i] == shift
+                ]
+                employees_on_leave = len(same_shift_leaves)
+
                 if employees_on_leave >= 2:
-                    print(f"Leave request denied for {employee_name}: "
-                          f"More than 2 employees already on leave on "
-                          f"{current_date.strftime('%Y-%m-%d')}.")
+                    print(f"Leave request denied for {employee_name}: More "
+                          f"than 2 employees already on leave on "
+                          f"{current_date.strftime('%Y-%m-%d')} within "
+                          f"the {shift} shift.")
                     log_to_audit_trail(employee_name, "Apply Leave",
                                        start_date, end_date, "Denied",
                                        "Exceeds 2 employees on leave")
                     return
         current_date += timedelta(days=1)
 
+    # If no conflicts, apply leave
     current_date = start_date_obj
     while current_date <= end_date_obj:
         date_col = date_columns.get(current_date)
@@ -200,8 +204,7 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
     updated_leave_taken = leave_taken_column[employee_row - 1]
     print(f"Updated Leave Taken: {updated_leave_taken} days.")
     log_to_audit_trail(employee_name, "Apply Leave", start_date, end_date,
-                       "Approved",
-                       f"Total Leave Taken: {updated_leave_taken} days")
+                       "Approved", f"Total Leave Taken: {updated_leave_taken}")
 
 
 def cancel_leave(sheet, employee_name, start_date, end_date, shift):
