@@ -159,7 +159,7 @@ Logs every action taken within the application, creating a comprehensive history
 
 ![Holiday Book - Holiday Sheet interface](assets/images/audit-sheet.png)
 
-### Technologies
+### Technologies Used
 
 1. **Python:**
    The core programming language used to develop the holiday booking application. Python’s simplicity and rich ecosystem of libraries make it ideal for building the command-line interface (CLI), implementing business logic, and integrating with external services like Google Sheets.
@@ -195,7 +195,7 @@ The combined use of these technologies enables the application to efficiently ma
 - [Heroku](http://www.heroku.com/) - For project deployment.
 - [Google Sheets](https://docs.google.com/spreadsheets/) - To hold and manage holiday data.
 
-### Libraries Used in the Holiday Booking Application
+### Libraries
 
 1. **gspread:**
    The `gspread` library is a Python wrapper for the Google Sheets API, enabling seamless interaction with Google Sheets from Python scripts. It simplifies authenticating, reading, writing, and updating spreadsheet data. In the holiday booking application, `gspread` is used to:
@@ -236,7 +236,7 @@ The combination of these libraries allows the application to provide a robust, s
 
 ### Testing
 
-The portal has been well tested and the results can be viewed [here - TESTING]()
+The portal has been well tested and the results can be viewed [here - TESTING](https://github.com/Deepeshpatel11/Holiday-Booking/blob/main/TESTING.md)
 
 ### Future Updates
 
