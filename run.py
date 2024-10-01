@@ -422,9 +422,13 @@ def main():
     """
     while True:
         print(
+            "\n"
             "Welcome to the Holiday Booking Application\n"
+            "\n"
             "Depending on what you want to do with your "
-            "annual leave, select an option below.\n"
+            "annual leave, select an option below. "
+            "ie (1) to request leave and (2) to cancel leave.\n"
+            "\n"
             "Bear in mind: only 2 employees can be on leave "
             "from the same shift on any given date, and if more than 8 days "
             "are requested, this will be denied.\n"
