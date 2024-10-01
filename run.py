@@ -329,6 +329,14 @@ def main():
     Main function to run the CLI for the leave system.
     """
     while True:
+        print(
+            "Welcome to the Holiday Booking Application\n"
+            "Depending on what you want to do with your "
+            "annual leave, select an option below.\n"
+            "Bear in mind: only 2 employees can be on leave "
+            "from the same shift on any given date,\nand if more than 8 days "
+            "are requested, this will be denied.\n"
+        )
         print("\nOptions:")
         print("1. Request leave")
         print("2. Cancel leave")
