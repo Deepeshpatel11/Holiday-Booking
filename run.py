@@ -23,15 +23,14 @@ BASE_DATE_GREEN_RED = datetime.strptime("2024-01-04", "%Y-%m-%d")
 BASE_DATE_BLUE_YELLOW = BASE_DATE_GREEN_RED  # Consistent cycle alignment
 
 
-def log_to_audit_trail(employee_name, action, start_date, end_date, status,
-                       remarks=""):
+def log_to_audit_trail(employee_name, action, start_date, end_date,
+                       status, remarks=""):
     """
-    Logs the leave request status to the
-    'audit_trail' worksheet in Google Sheets.
+    Logs the leave request status to the 'audit_trail' worksheet.
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_row = [timestamp, employee_name, action, start_date, end_date, status,
-               remarks]
+    new_row = [timestamp, employee_name, action, start_date, end_date,
+               status, remarks]
     audit_trail.append_row(new_row)
     print(f"Logged action to audit_trail: {new_row}")
 
@@ -39,9 +38,8 @@ def log_to_audit_trail(employee_name, action, start_date, end_date, status,
 def find_date_column(sheet, date):
     """
     Finds the column number for a given date in the Google Sheet.
-    The date in the sheet is in 'DD MMM' format (e.g., '01 Jan').
     """
-    date_str = date.strftime("%d %b")  # Format to match 'DD MMM'
+    date_str = date.strftime("%d %b")
     date_cell = sheet.find(date_str)
 
     if date_cell is not None:
@@ -50,7 +48,6 @@ def find_date_column(sheet, date):
         print(f"[ERROR] Date {date_str} not found in the sheet.")
         return None
 
-# I was supported by Tomas Kubancik Alumni of Code Institute to write the code for cache data columns.
 
 def cache_date_columns(sheet, start_date, end_date):
     """
@@ -63,16 +60,17 @@ def cache_date_columns(sheet, start_date, end_date):
         if date_col:
             date_columns[current_date] = date_col
         else:
-            print(f"[DEBUG] No date column found for "
-                  f"{current_date.strftime('%Y-%m-%d')}")
+            print(
+                f"[DEBUG] No date column found for "
+                f"{current_date.strftime('%Y-%m-%d')}"
+            )
         current_date += timedelta(days=1)
     return date_columns
 
 
 def is_employee_due_to_work(employee_shift, date):
     """
-    Checks whether an employee is due to
-    work on a given date based on the shift.
+    Checks whether an employee is due to work on a given date based on shift.
     """
     if employee_shift in ["Red", "Green"]:
         days_since_base = (date - BASE_DATE_GREEN_RED).days
@@ -105,7 +103,7 @@ def validate_shift(sheet, employee_name, expected_shift):
     shifts = sheet.col_values(2)  # Shifts in column 2
 
     try:
-        employee_row = employee_names.index(employee_name)  # Find employee row
+        employee_row = employee_names.index(employee_name)  # Find employee
         actual_shift = shifts[employee_row]  # Get the actual shift
         return actual_shift == expected_shift
     except ValueError:
@@ -130,41 +128,130 @@ def validate_date(date_str):
         return None
 
 
-def apply_leave(sheet, employee_name, start_date, end_date, shift):
+def calculate_consecutive_leave(sheet, employee_name, start_date_obj, shift):
     """
-    Applies leave for an employee, ensuring no more than 2 employees are on
-    leave within the same exact shift (e.g., Red, Green, Blue, or Yellow).
+    Calculate the number of existing consecutive leave days for an employee.
     """
-    employee_name = format_input(employee_name)
-    shift = format_input(shift)
-
-    if not validate_shift(sheet, employee_name, shift):
-        print(
-            f"Leave request failed: {employee_name} is not in "
-            f"{shift} shift."
-        )
-        log_to_audit_trail(employee_name, "Apply Leave", start_date, end_date,
-                           "Denied", "Invalid Shift")
-        return
-
-    start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
-    end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
-
+    date_columns = cache_date_columns(
+        sheet, start_date_obj - timedelta(days=8), start_date_obj
+    )
+    current_date = start_date_obj - timedelta(days=8)
     employee_names = sheet.col_values(1)
     shifts = sheet.col_values(2)
+
     try:
         employee_row = employee_names.index(employee_name) + 1
     except ValueError:
-        print(f"Employee {employee_name} not found.")
-        log_to_audit_trail(employee_name, "Apply Leave", start_date, end_date,
-                           "Denied", "Employee Not Found")
+        return 0
+
+    consecutive_days = 0
+    while current_date < start_date_obj:
+        if is_employee_due_to_work(shift, current_date):
+            date_col = date_columns.get(current_date)
+            if date_col:
+                leave_statuses = sheet.col_values(date_col)
+                if leave_statuses[employee_row - 1] == "Leave":
+                    consecutive_days += 1
+                else:
+                    break
+        current_date += timedelta(days=1)
+    return consecutive_days
+
+
+def apply_leave(sheet, employee_name, start_date, end_date, shift):
+    """
+    Applies leave for an employee, ensuring no more than 2 employees
+    are on leave within the same shift and that the cumulative
+    workdays do not exceed 8 days.
+    """
+    employee_name, shift = format_input(employee_name), format_input(shift)
+
+    if not validate_employee_and_shift(
+            sheet, employee_name, shift, start_date, end_date):
         return
 
-    # Cache the date columns for quick lookups
+    start_date_obj, end_date_obj = get_date_objects(start_date, end_date)
+
+    if not validate_workdays_limit(
+            sheet, employee_name, shift, start_date_obj, end_date_obj,
+            start_date, end_date):
+        return
+
+    if not validate_existing_leave_conflicts(
+            sheet, employee_name, shift, start_date_obj, end_date_obj,
+            start_date, end_date):
+        return
+
+    process_leave_application(
+        sheet, employee_name, start_date_obj, end_date_obj,
+        shift, start_date, end_date)
+
+
+def validate_employee_and_shift(sheet, employee_name, shift, start_date,
+                                end_date):
+    """
+    Validates if the employee and shift are correct before applying leave.
+    """
+    if not validate_shift(sheet, employee_name, shift):
+        print(
+            f"Leave request failed: {employee_name} "
+            f"is not in {shift} shift."
+        )
+        log_to_audit_trail(
+            employee_name, "Apply Leave", start_date, end_date,
+            "Denied", "Invalid Shift"
+        )
+        return False
+    return True
+
+
+def get_date_objects(start_date, end_date):
+    """
+    Converts string dates to datetime objects.
+    """
+    start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+    return start_date_obj, end_date_obj
+
+
+def validate_workdays_limit(sheet, employee_name, shift, start_date_obj,
+                            end_date_obj, start_date, end_date):
+    """
+    Validates if the new leave days along
+    with consecutive days exceed the limit.
+    """
+    consecutive_leave_days = calculate_consecutive_leave(
+        sheet, employee_name, start_date_obj, shift
+    )
+    new_workdays = sum(
+        1 for d in (
+            start_date_obj + timedelta(days=i)
+            for i in range((end_date_obj - start_date_obj).days + 1)
+        ) if is_employee_due_to_work(shift, d)
+    )
+
+    if new_workdays + consecutive_leave_days > 8:
+        print(f"Leave request denied for {employee_name}: Exceeds "
+              f"8 consecutive workdays.")
+        log_to_audit_trail(
+            employee_name, "Apply Leave", start_date, end_date,
+            "Denied", "Exceeds Consecutive 8 Days"
+        )
+        return False
+    return True
+
+
+def validate_existing_leave_conflicts(sheet, employee_name, shift,
+                                      start_date_obj, end_date_obj,
+                                      start_date, end_date):
+    """
+    Checks if there are already 2 employees on leave within the same shift.
+    """
+    employee_names = sheet.col_values(1)
+    shifts = sheet.col_values(2)
     date_columns = cache_date_columns(sheet, start_date_obj, end_date_obj)
     current_date = start_date_obj
 
-    # Check for existing leave conflicts within the same individual shift
     while current_date <= end_date_obj:
         if is_employee_due_to_work(shift, current_date):
             date_col = date_columns.get(current_date)
@@ -174,21 +261,37 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
                     i for i, name in enumerate(employee_names)
                     if leave_statuses[i] == "Leave" and shifts[i] == shift
                 ]
-                employees_on_leave = len(same_shift_leaves)
-
-                if employees_on_leave >= 2:
-                    print(f"Leave request denied for {employee_name}: More "
-                          f"than 2 employees already on leave on "
+                if len(same_shift_leaves) >= 2:
+                    print(f"Leave request denied for {employee_name}: "
+                          f"More than 2 employees already on leave on "
                           f"{current_date.strftime('%Y-%m-%d')} within "
                           f"the {shift} shift.")
-                    log_to_audit_trail(employee_name, "Apply Leave",
-                                       start_date, end_date, "Denied",
-                                       "Exceeds 2 employees on leave")
-                    return
+                    log_to_audit_trail(
+                        employee_name, "Apply Leave", start_date, end_date,
+                        "Denied", "Exceeds 2 employees on leave"
+                    )
+                    return False
         current_date += timedelta(days=1)
+    return True
 
-    # If no conflicts, apply leave
+
+def process_leave_application(sheet, employee_name, start_date_obj,
+                              end_date_obj, shift, start_date, end_date):
+    """
+    Processes the leave application if all validations are passed.
+    """
+    employee_names = sheet.col_values(1)
+    try:
+        employee_row = employee_names.index(employee_name) + 1
+    except ValueError:
+        print(f"Employee {employee_name} not found.")
+        log_to_audit_trail(employee_name, "Apply Leave", start_date,
+                           end_date, "Denied", "Employee Not Found")
+        return
+
+    date_columns = cache_date_columns(sheet, start_date_obj, end_date_obj)
     current_date = start_date_obj
+
     while current_date <= end_date_obj:
         date_col = date_columns.get(current_date)
         if date_col:
@@ -201,6 +304,7 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
                               f"{current_date.strftime('%Y-%m-%d')}")
         current_date += timedelta(days=1)
 
+    # Update and log the total leave taken
     leave_taken_column = sheet.col_values(4)
     updated_leave_taken = leave_taken_column[employee_row - 1]
     print(f"Updated Leave Taken: {updated_leave_taken} days.")
@@ -258,34 +362,28 @@ def cancel_leave(sheet, employee_name, start_date, end_date, shift):
 
 def request_leave():
     """
-    CLI function to request leave by taking
-    inputs from the user and applying leave.
+    CLI function to request leave by taking inputs from the user.
     """
     employee_name = input("Enter employee name (e.g., 'John Doe'): ")
-    shift = input(
-        "Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': "
-    )
+    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), "
+                  "e.g., 'Green': ")
 
     while True:
-        start_date = input(
-            "Enter start date of leave (YYYY-MM-DD), e.g., '2024-01-01': "
-        )
+        start_date = input("Enter start date of leave (YYYY-MM-DD), "
+                           "e.g., '2024-01-01': ")
         start_date_obj = validate_date(start_date)
         if start_date_obj:
             break
 
     while True:
-        end_date = input(
-            "Enter end date of leave (YYYY-MM-DD), e.g., '2024-01-08': "
-        )
+        end_date = input("Enter end date of leave (YYYY-MM-DD), "
+                         "e.g., '2024-01-08': ")
         end_date_obj = validate_date(end_date)
         if end_date_obj and end_date_obj >= start_date_obj:
             break
         else:
-            print(
-                f"Error: The end date must be on or after the start date "
-                f"({start_date})."
-            )
+            print(f"Error: The end date must be on or after the start date "
+                  f"({start_date}).")
 
     apply_leave(holiday, employee_name, start_date, end_date, shift)
 
@@ -295,32 +393,25 @@ def request_leave_cancellation():
     CLI function to cancel pre-booked leave by taking inputs from the user.
     """
     employee_name = input("Enter employee name (e.g., 'John Doe'): ")
-    shift = input(
-        "Enter employee's shift (Green/Red/Blue/Yellow), e.g., 'Green': "
-    )
+    shift = input("Enter employee's shift (Green/Red/Blue/Yellow), "
+                  "e.g., 'Green': ")
 
     while True:
-        start_date = input(
-            "Enter start date of leave to cancel (YYYY-MM-DD), e.g., "
-            "'2024-01-01': "
-        )
+        start_date = input("Enter start date of leave to cancel (YYYY-MM-DD), "
+                           "e.g., '2024-01-01': ")
         start_date_obj = validate_date(start_date)
         if start_date_obj:
             break
 
     while True:
-        end_date = input(
-            "Enter end date of leave to cancel (YYYY-MM-DD), e.g., "
-            "'2024-01-08': "
-        )
+        end_date = input("Enter end date of leave to cancel (YYYY-MM-DD), "
+                         "e.g., '2024-01-08': ")
         end_date_obj = validate_date(end_date)
         if end_date_obj and end_date_obj >= start_date_obj:
             break
         else:
-            print(
-                f"Error: The end date must be on or after the start date "
-                f"({start_date})."
-            )
+            print(f"Error: The end date must be on or after the start date "
+                  f"({start_date}).")
 
     cancel_leave(holiday, employee_name, start_date, end_date, shift)
 
