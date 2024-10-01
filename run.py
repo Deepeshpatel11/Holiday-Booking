@@ -50,6 +50,7 @@ def find_date_column(sheet, date):
         print(f"[ERROR] Date {date_str} not found in the sheet.")
         return None
 
+# I was supported by Tomas Kubancik Alumni of Code Institute to write the code for cache data columns.
 
 def cache_date_columns(sheet, start_date, end_date):
     """
@@ -334,7 +335,7 @@ def main():
             "Depending on what you want to do with your "
             "annual leave, select an option below.\n"
             "Bear in mind: only 2 employees can be on leave "
-            "from the same shift on any given date,\nand if more than 8 days "
+            "from the same shift on any given date, and if more than 8 days "
             "are requested, this will be denied.\n"
         )
         print("\nOptions:")
