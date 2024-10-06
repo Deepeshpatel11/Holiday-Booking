@@ -16,7 +16,8 @@ The live deployed project link is [HERE](https://holiday-booking-084cf2358c93.he
 * [Project](#project)
   * [User goals:](#user-goals)
   * [Site owner goals](#site-owner-goals)
-  * [Pre-Development](#pre-develepment)
+  * [Pre-Development](#pre-development)
+  * [Development](#development)
 * [Features](#features)
 * [Google Sheets](#google-sheets)
     * [Holiday-sheet](#holiday-sheet)
@@ -56,7 +57,7 @@ The holiday booking application allows employees to input their name, shift type
 * Implement a system that approves or denies leave request in real time.
 * Record all leave requests in an audit log and maintain an employee leave schedule to track which employees are scheduled to work.
 
-### Pre Develepment
+### Pre Development
 
 I visualized the logical flow and decision-making process of the holiday management application using Lucidchart. This involved creating a detailed diagram that outlines the various steps and conditions the system will handle, including user input validation, leave application rules, and conflict resolution. By leveraging Lucidchart’s features, I was able to map out each function’s interactions, decision points, and workflows, providing a clear blueprint for how the system should operate. This diagram serves as a visual guide for understanding the application’s behavior and ensuring consistency in implementation.
 
@@ -153,7 +154,7 @@ Maintains comprehensive leave records, capturing employee names, assigned shifts
 
 ![Holiday Book - Holiday Sheet interface](assets/images/holiday-sheet.png)
 
-#### Audit Trail Sheet
+#### Audit-Log
 
 Logs every action taken within the application, creating a comprehensive history of leave requests and cancellations for audit and tracking purposes.
 

@@ -27,6 +27,18 @@ def log_to_audit_trail(employee_name, action, start_date, end_date,
                        status, remarks=""):
     """
     Logs the leave request status to the 'audit_trail' worksheet.
+    Parameters:
+    - employee_name (str): Name of the employee requesting leave.
+    - action (str): Type of action performed
+    (e.g., "Apply Leave", "Cancel Leave").
+    - start_date (str): Start date of the leave request in 'YYYY-MM-DD' format.
+    - end_date (str): End date of the leave request in 'YYYY-MM-DD' format.
+    - status (str): Status of the request ("Approved", "Denied").
+    - remarks (str): Additional remarks or comments
+    for the log entry (default is an empty string).
+
+    Returns:
+    None
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     new_row = [timestamp, employee_name, action, start_date, end_date,
@@ -38,6 +50,14 @@ def log_to_audit_trail(employee_name, action, start_date, end_date,
 def find_date_column(sheet, date):
     """
     Finds the column number for a given date in the Google Sheet.
+
+    Parameters:
+    - sheet (gspread.Worksheet): The worksheet to search within.
+    - date (datetime): The date for which the column number is to be found.
+
+    Returns:
+    - int: The column number if found, or
+    None if the date is not present in the sheet.
     """
     date_str = date.strftime("%d %b")
     date_cell = sheet.find(date_str)
@@ -48,10 +68,23 @@ def find_date_column(sheet, date):
         print(f"[ERROR] Date {date_str} not found in the sheet.")
         return None
 
+# Credit for helping me scope and write the code for cache data
+# to Tomas Kubancik - alumni of CodeInstitute
+
 
 def cache_date_columns(sheet, start_date, end_date):
     """
-    Caches date columns for all dates in the given range to minimize API calls.
+    Caches the column numbers for all dates in the
+    given range to minimize API calls.
+
+    Parameters:
+    - sheet (gspread.Worksheet): The worksheet containing the date columns.
+    - start_date (datetime): The starting date of the range.
+    - end_date (datetime): The ending date of the range.
+
+    Returns:
+    - dict: A dictionary mapping each date in the range to
+    its corresponding column number.
     """
     date_columns = {}
     current_date = start_date
@@ -70,7 +103,15 @@ def cache_date_columns(sheet, start_date, end_date):
 
 def is_employee_due_to_work(employee_shift, date):
     """
-    Checks whether an employee is due to work on a given date based on shift.
+    Checks whether an employee is due to work on a
+    given date based on their shift type.
+
+    Parameters:
+    - employee_shift (str): Shift type of the employee (e.g., "Red", "Green").
+    - date (datetime): The date to check.
+
+    Returns:
+    - bool: True if the employee is scheduled to work, False otherwise.
     """
     if employee_shift in ["Red", "Green"]:
         days_since_base = (date - BASE_DATE_GREEN_RED).days
@@ -90,14 +131,30 @@ def is_employee_due_to_work(employee_shift, date):
 
 def format_input(input_value):
     """
-    Formats and standardizes user inputs for names and shifts.
+    Formats and standardizes user inputs by trimming
+    whitespace and converting to title case.
+
+    Parameters:
+    - input_value (str): The raw input value provided by the user.
+
+    Returns:
+    - str: The formatted string.
     """
     return input_value.strip().title()  # Converts strings to Title Case
 
 
 def validate_shift(sheet, employee_name, expected_shift):
     """
-    Validates if the shift entered matches the employee's actual shift.
+    Validates if the shift entered by the employee
+    matches their actual shift in the system.
+
+    Parameters:
+    - sheet (gspread.Worksheet): The worksheet containing employee shift data.
+    - employee_name (str): Name of the employee.
+    - expected_shift (str): The shift provided by the user for validation.
+
+    Returns:
+    - bool: True if the shift matches, False if it does not.
     """
     employee_names = sheet.col_values(1)  # Employee names in column 1
     shifts = sheet.col_values(2)  # Shifts in column 2
@@ -112,8 +169,15 @@ def validate_shift(sheet, employee_name, expected_shift):
 
 def validate_date(date_str):
     """
-    Validates if the given date string is in the format 'YYYY-MM-DD' and
-    within the year 2024.
+    Validates if the given date string is in the
+    format 'YYYY-MM-DD' and within the year 2024.
+
+    Parameters:
+    - date_str (str): Date string to be validated.
+
+    Returns:
+    - datetime: A datetime object if the date is
+    valid and within 2024, otherwise None.
     """
     try:
         date_obj = datetime.strptime(date_str, "%Y-%m-%d")
@@ -130,7 +194,18 @@ def validate_date(date_str):
 
 def calculate_consecutive_leave(sheet, employee_name, start_date_obj, shift):
     """
-    Calculate the number of existing consecutive leave days for an employee.
+    Calculates the number of consecutive leave days an
+    employee has taken before the requested start date.
+
+    Parameters:
+    - sheet (gspread.Worksheet): The worksheet containing leave data.
+    - employee_name (str): Name of the employee.
+    - start_date_obj (datetime): The start date of the new leave request.
+    - shift (str): The shift type of the employee.
+
+    Returns:
+    - int: The number of consecutive leave days before the
+    requested start date.
     """
     date_columns = cache_date_columns(
         sheet, start_date_obj - timedelta(days=8), start_date_obj
@@ -162,7 +237,17 @@ def apply_leave(sheet, employee_name, start_date, end_date, shift):
     """
     Applies leave for an employee, ensuring no more than 2 employees
     are on leave within the same shift and that the cumulative
-    workdays do not exceed 8 days.
+    workdays do not exceed 8 consecutive days.
+
+    Parameters:
+    - sheet (gspread.Worksheet): The worksheet containing leave data.
+    - employee_name (str): Name of the employee applying for leave.
+    - start_date (str): The start date of the leave in 'YYYY-MM-DD' format.
+    - end_date (str): The end date of the leave in 'YYYY-MM-DD' format.
+    - shift (str): The shift type of the employee.
+
+    Returns:
+    None
     """
     employee_name, shift = format_input(employee_name), format_input(shift)
 
@@ -191,6 +276,16 @@ def validate_employee_and_shift(sheet, employee_name, shift, start_date,
                                 end_date):
     """
     Validates if the employee and shift are correct before applying leave.
+
+    Parameters:
+    - sheet (gspread.Worksheet): The worksheet containing employee shift data.
+    - employee_name (str): Name of the employee.
+    - shift (str): Employee's shift type.
+    - start_date (str): Start date of the leave in 'YYYY-MM-DD' format.
+    - end_date (str): End date of the leave in 'YYYY-MM-DD' format.
+
+    Returns:
+    - bool: True if the shift and employee are valid, False otherwise.
     """
     if not validate_shift(sheet, employee_name, shift):
         print(
@@ -208,6 +303,13 @@ def validate_employee_and_shift(sheet, employee_name, shift, start_date,
 def get_date_objects(start_date, end_date):
     """
     Converts string dates to datetime objects.
+
+    Parameters:
+    - start_date (str): Start date in 'YYYY-MM-DD' format.
+    - end_date (str): End date in 'YYYY-MM-DD' format.
+
+    Returns:
+    - tuple: A tuple containing datetime objects for start and end dates.
     """
     start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
     end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
@@ -217,8 +319,20 @@ def get_date_objects(start_date, end_date):
 def validate_workdays_limit(sheet, employee_name, shift, start_date_obj,
                             end_date_obj, start_date, end_date):
     """
-    Validates if the new leave days along
-    with consecutive days exceed the limit.
+    Validates if the new leave days along with consecutive days
+    exceed the limit.
+
+    Parameters:
+    - sheet (gspread.Worksheet): The worksheet containing leave data.
+    - employee_name (str): Name of the employee.
+    - shift (str): Employee's shift type.
+    - start_date_obj (datetime): Start date as a datetime object.
+    - end_date_obj (datetime): End date as a datetime object.
+    - start_date (str): Start date in 'YYYY-MM-DD' format.
+    - end_date (str): End date in 'YYYY-MM-DD' format.
+
+    Returns:
+    - bool: True if the leave does not exceed the limit, False otherwise.
     """
     consecutive_leave_days = calculate_consecutive_leave(
         sheet, employee_name, start_date_obj, shift
@@ -246,6 +360,18 @@ def validate_existing_leave_conflicts(sheet, employee_name, shift,
                                       start_date, end_date):
     """
     Checks if there are already 2 employees on leave within the same shift.
+
+    Parameters:
+    - sheet (gspread.Worksheet): The worksheet containing leave data.
+    - employee_name (str): Name of the employee.
+    - shift (str): Employee's shift type.
+    - start_date_obj (datetime): Start date as a datetime object.
+    - end_date_obj (datetime): End date as a datetime object.
+    - start_date (str): Start date in 'YYYY-MM-DD' format.
+    - end_date (str): End date in 'YYYY-MM-DD' format.
+
+    Returns:
+    - bool: True if there is no conflict, False if conflict exists.
     """
     employee_names = sheet.col_values(1)
     shifts = sheet.col_values(2)
@@ -279,6 +405,18 @@ def process_leave_application(sheet, employee_name, start_date_obj,
                               end_date_obj, shift, start_date, end_date):
     """
     Processes the leave application if all validations are passed.
+
+    Parameters:
+    - sheet (gspread.Worksheet): The worksheet containing leave data.
+    - employee_name (str): Name of the employee.
+    - start_date_obj (datetime): Start date as a datetime object.
+    - end_date_obj (datetime): End date as a datetime object.
+    - shift (str): Employee's shift type.
+    - start_date (str): Start date in 'YYYY-MM-DD' format.
+    - end_date (str): End date in 'YYYY-MM-DD' format.
+
+    Returns:
+    None
     """
     employee_names = sheet.col_values(1)
     try:
@@ -314,7 +452,20 @@ def process_leave_application(sheet, employee_name, start_date_obj,
 
 def cancel_leave(sheet, employee_name, start_date, end_date, shift):
     """
-    Cancels leave for an employee and validates the shift before processing.
+    Cancels leave for an employee if it is already marked as
+    "Leave" in the system.
+
+    Parameters:
+    - sheet (gspread.Worksheet): The worksheet containing leave data.
+    - employee_name (str): Name of the employee.
+    - start_date (str): Start date of the leave to be canceled
+    in 'YYYY-MM-DD' format.
+    - end_date (str): End date of the leave to be canceled
+    in 'YYYY-MM-DD' format.
+    - shift (str): Employee's shift type.
+
+    Returns:
+    None
     """
     employee_name = format_input(employee_name)
     shift = format_input(shift)
@@ -363,6 +514,16 @@ def cancel_leave(sheet, employee_name, start_date, end_date, shift):
 def request_leave():
     """
     CLI function to request leave by taking inputs from the user.
+
+    Prompts the user to enter their employee name, shift,
+    and the start and end dates of their leave.
+    Calls the `apply_leave` function if the inputs are valid.
+
+    Parameters:
+    None
+
+    Returns:
+    None
     """
     employee_name = input("Enter employee name (e.g., 'John Doe'): ")
     shift = input("Enter employee's shift (Green/Red/Blue/Yellow), "
@@ -390,7 +551,18 @@ def request_leave():
 
 def request_leave_cancellation():
     """
-    CLI function to cancel pre-booked leave by taking inputs from the user.
+    CLI function to cancel a previously booked leave by
+    taking inputs from the user.
+
+    Prompts the user to enter their employee name, shift, and the
+    start and end dates of the leave they wish to cancel.
+    Calls the `cancel_leave` function if the inputs are valid.
+
+    Parameters:
+    None
+
+    Returns:
+    None
     """
     employee_name = input("Enter employee name (e.g., 'John Doe'): ")
     shift = input("Enter employee's shift (Green/Red/Blue/Yellow), "
@@ -418,7 +590,18 @@ def request_leave_cancellation():
 
 def main():
     """
-    Main function to run the CLI for the leave system.
+    Main function to run the Command Line Interface (CLI) for the leave system.
+
+    Presents a menu to the user with options to request leave,
+    cancel leave, or exit the system.
+    Handles user input and calls the appropriate functions
+    based on the user's choice.
+
+    Parameters:
+    None
+
+    Returns:
+    None
     """
     while True:
         print(
